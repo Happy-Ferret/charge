@@ -1,10 +1,12 @@
 ################################################################
 # * Charge System Management Framework 
-# * Sccsid @(#)Makefile	1.1 (Charge) 22/06/14
+# * Sccsid @(#)Makefile	1.2 (Charge) 22/06/14
 ################################################################
 
 SUBDIR=libsvc \
 		svc.restartd \
+
+debug: all
 
 preclean:
 	rm -rf proto

@@ -1,11 +1,14 @@
 ################################################################
 # * Charge System Management Framework 
-# * Sccsid @(#)charge.prog.mk	1.1 (Charge) 22/06/14
+# * Sccsid @(#)charge.prog.mk	1.2 (Charge) 22/06/14
 ################################################################
 
 # # # # # # # #
-# Includes  # #
+# CFlags  # # #
 # # # # # # # #
+.ifdef (DEBUG)
+  CFLAGS = -g -O0
+.endif
 CFLAGS+=-I${PWD}/../libsvc -I ${PWD}/../hdr
 
 # # # # # # # #

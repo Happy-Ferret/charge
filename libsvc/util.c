@@ -1,6 +1,6 @@
 /* 
  * Charge System Management Framework
- * Sccsid @(#)util.c	1.1 (Charge) 22/06/14
+ * Sccsid @(#)util.c	1.2 (Charge) 29/06/14
  */
 
 #include <sys/stat.h>
@@ -95,6 +95,8 @@ clearsvc(Service* svc)
 	
 	svc->StartTimeout =3;
 	svc->StopTimeout =3;
+	
+	svc->Restart =R_NO;
 	
 	svc->TimedOut =0;
 	svc->KillTimerOn =0;

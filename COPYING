@@ -1,4 +1,4 @@
-SCCS ID: @(#)COPYING	1.1 (Charge) 22/06/14
+SCCS ID: @(#)COPYING	1.2 (Charge) 26/06/14
 
 The Charge System Management Framework
 Copyright (c) 2014, David Mackay.
@@ -39,4 +39,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 - D.J. Bernstein's libraries:
+Public domain.
+
+- Epoch Init System:
 Public domain.

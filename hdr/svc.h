@@ -1,6 +1,6 @@
 /* 
  * Charge System Management Framework
- * Sccsid @(#)svc.h	1.1 (Charge) 22/06/14
+ * Sccsid @(#)svc.h	1.2 (Charge) 29/06/14
  */
 
 #ifndef SVC_H
@@ -24,7 +24,10 @@ struct Service
 	
 	int StartTimeout;
 	int StopTimeout;
+	
+	int Restart;
 
+	/* internal */
 	int StateTimerOn;
 	int TimedOut;
 	int AuxStateTimerOn;
@@ -35,7 +38,6 @@ struct Service
 	int AuxKillTimedOut;
 
 	int FirstRun;
-	int DoubleTransition;
 	int State;
 	int AuxState;
 	int Want;
@@ -77,6 +79,11 @@ typedef struct Service Service;
 #define TIMER_AUX 2
 #define TIMER_AUXKILL 4
 #define TIMER_KILL 5
+
+#define R_NO 0
+#define R_ALWAYS 1
+#define R_ON_SUCCESS 2
+#define R_ON_FAILURE 3
 
 #define AUX 1
 #define MAIN 0

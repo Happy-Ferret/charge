@@ -1,15 +1,16 @@
 /* 
  * Charge System Management Framework
- * Sccsid @(#)main.c	1.1 (Charge) 22/06/14
+ * Sccsid @(#)main.c	1.4 (Charge) 29/06/14
  */
  
-static const char sccsid[] ="@(#)main.c	1.1 (Charge) 22/06/14";
+static const char sccsid[] ="@(#)main.c	1.4 (Charge) 29/06/14";
 
 #include <sys/types.h>
 #include <sys/event.h>
 #include <sys/time.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <sys/param.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -28,7 +29,7 @@ int selfpipe[2]; /* when written to, this makes kevent return immediately
  * useful for moving from S_EXITED onwards */
  
 #define WSELFPIPE write(selfpipe[1], " ", 1);
-#define ENTERSTATE(s) dbg("entering state " #s "\n"); svc->State=(s);
+#define ENTERSTATE(s) dbg("entering state " #s "\n"); svc->State=(s); svc->MainPIDExited =0;
 #define ENTERAUXSTATE(s) dbg("entering AUX state " #s "\n"); svc->AuxState=(s);
 
 int
@@ -61,6 +62,18 @@ parseconfig(void* user, const char* section, const char* name,
 		svc->ExecStartPost =strdup(value);
 	else if (MATCH("Service", "ExecStopPost"))
 		svc->ExecStopPost =strdup(value);
+	if (MATCH("Service", "Restart"))
+	{
+		if (!stricmp("No", value))
+			svc->Restart =R_NO;
+		else if (!stricmp("Always", value))
+			svc->Restart =R_ALWAYS;
+		else if (!stricmp("On-success", value))
+			svc->Restart =R_ON_SUCCESS;
+		else if (!stricmp("On-failure", value))
+			svc->Restart =R_ON_FAILURE;
+		dbg("Service Type: %s\n", value);
+	}
 	else
 	{
 		return 0;  /* unknown section/name, error */
@@ -94,11 +107,13 @@ process_proc_kevents(int *kq, struct kevent *ke, Service *svc)
 		{
 			dbg("Main PID has exited.\n");
 			svc->MainPIDExited =1;
+			WSELFPIPE
 		}
 		else if (ke->ident == svc->AuxMainPID)
 		{
 			dbg("Main AUX PID has exited.\n");
 			svc->AuxMainPIDExited =1;
+			WSELFPIPE
 		}
 	}
 	if (ke->fflags & NOTE_TRACKERR)
@@ -218,10 +233,13 @@ svc_stop_post(int *kq, struct kevent *ke, Service *svc)
 			ENTERSTATE(S_STOP_POST)
 			svc->MainPIDExited =0;
 			svc->MainPID =pid;
+			svc->TimedOut =0;
 			set_kqueue_timer(kq, ke, svc->StopTimeout, TIMER_STATELIMIT);
 		
 		}
 	}
+	else
+		ENTERSTATE(S_STOP_POST)
 	return 0;
 }
 int
@@ -266,6 +284,29 @@ svc_kill_stage_2(int *kq, struct kevent *ke, Service *svc, int Type)
 	return 0;
 }
 int
+should_restart(Service *svc) /* 1 for yes, 0 for no */
+{
+	if (svc->Restart == R_ALWAYS)
+		return 1;
+	else if (svc->Restart == R_NO)
+		return 0;
+	else if (svc->Restart == R_ON_SUCCESS)
+	{
+		if((WEXITSTATUS(svc->MainPIDExitWstat) != 0) || svc->TimedOut)
+			return 0;
+		else
+			return 1;
+	}
+	else if (svc->Restart == R_ON_FAILURE)
+	{
+		if((WEXITSTATUS(svc->MainPIDExitWstat) != 0) || svc->TimedOut)
+			return 1;
+		else
+			return 0;
+	}
+	return 0;
+}
+int
 svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 {
 	switch(svc->State)
@@ -284,7 +325,7 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 		}
 		if (svc->MainPIDExited)
 		{
-			if (WEXITSTATUS(svc->MainPIDExitWstat) != 0)
+			if (!(should_restart(svc)))
 				proceed =0;
 		}
 		else
@@ -340,6 +381,26 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 		break;
 	
 	case S_ONLINE:
+		if(svc->StateTimerOn)
+			unset_kqueue_timer(kq, ke, svc->StartTimeout, TIMER_STATELIMIT);
+		svc->StateTimerOn =0;
+		if(svc->MainPIDExited && svc->AuxState == S_NONE)
+		{
+			//if we want to restart, set svc->want = s_offline?
+			if(should_restart(svc))
+				svc->Want =S_STOP_POST;
+			else
+				svc->Want =S_FAILED;
+			/*if(svc->PL)
+				svc_kill_stage_2(kq, ke, svc, MAIN);
+			else */ /* let S_STOP_POST handle this. */
+			//ENTERSTATE(S_STOP_POST)
+			svc_kill_stage_1(kq, ke, svc, MAIN);
+		}
+		else if (!svc->MainPIDExited) /* S_START_PRE is probably running */
+		{
+			//WSELFPIPE /* keep returning from kevent() until aux is clear */
+		}
 		break;
 	
 	case S_STOP_SIGTERM:
@@ -348,10 +409,8 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 			if(svc->KillTimerOn == 1)
 				unset_kqueue_timer(kq, ke, svc->StopTimeout, TIMER_KILL);
 			svc->KillTimerOn =0;
-			if (svc->Want == S_FAILED)
-			{
-				ENTERSTATE(S_FAILED)
-			}
+			ENTERSTATE(S_STOP_SIGKILL)
+			WSELFPIPE
 		}
 		else if(svc->KillTimedOut == 1)
 		{
@@ -359,8 +418,33 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 		}
 		break;
 	case S_STOP_SIGKILL:
-		ENTERSTATE(S_FAILED)
+		if(svc->AuxState != S_NONE)
+			return 0;
+		if(should_restart(svc))
+		{
+			svc->Want =S_INACTIVE;
+		}
+		else
+			svc->Want =S_FAILED;
+			
+		svc_stop_post(kq, ke, svc);
 		break;
+	case S_STOP_POST:
+		if (svc->TimedOut)
+		{
+			dbg("S_STOP_POST expired\n");
+			if(should_restart(svc))
+				svc->Want =S_INACTIVE;
+			else
+				svc->Want =S_FAILED;
+			svc_kill_stage_1(kq, ke, svc, MAIN);
+			return 0;
+		}
+		if (svc->MainPIDExited)
+		{
+			ENTERSTATE(svc->Want)
+		}
+		
 	}
 	return 0;
 }
@@ -391,9 +475,9 @@ svc_aux_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 	}
 	if (svc->AuxPIDsPurged)
 	{
-		if(svc->KillTimerOn == 1)
+		if(svc->AuxKillTimerOn == 1)
 			unset_kqueue_timer(kq, ke, svc->StopTimeout, TIMER_AUXKILL);
-		svc->KillTimerOn =0;
+		svc->AuxKillTimerOn =0;
 	}
 	else if(svc->AuxKillTimedOut == 1)
 	{
@@ -412,6 +496,8 @@ main(int argc, char **argv)
 		       0
 	};   /* nanoseconds */
 	Service svc;
+	char* svcname="test.service";
+	char nametmp[MAXPATHLEN];
 	
 	dbg("svc.restartd(8) %s\n", sccsid);
 	clearsvc(&svc);
@@ -421,6 +507,11 @@ main(int argc, char **argv)
 	fcntl(selfpipe[1], F_SETFD, FD_CLOEXEC);
 	fcntl(selfpipe[0],F_SETFL,fcntl(selfpipe[0],F_GETFL,0) | O_NONBLOCK);
 	fcntl(selfpipe[1],F_SETFL,fcntl(selfpipe[1],F_GETFL,0) | O_NONBLOCK);
+	
+	sprintf(nametmp, "/run/svc/%s", svcname);
+
+	if(mkdir(nametmp, 0755) == -1)
+		dbg("mkdir %s failed\n", nametmp);
 
 	if (ini_parse("test.service", parseconfig, &svc) < 0)
 	{
@@ -457,22 +548,22 @@ main(int argc, char **argv)
 		}
 		if (ke.filter == EVFILT_TIMER)
 		{
-			if (ke.ident == TIMER_STATELIMIT)
+			if (ke.ident == TIMER_STATELIMIT && svc.StateTimerOn)
 			{
 				dbg("timeout\n");
 				svc.TimedOut =1;
 			}
-			else if (ke.ident == TIMER_AUX)
+			else if (ke.ident == TIMER_AUX && svc.AuxStateTimerOn)
 			{
 				dbg("AUX timeout\n");
 				svc.AuxTimedOut =1;
 			}
-			else if (ke.ident == TIMER_KILL)
+			else if (ke.ident == TIMER_KILL && svc.KillTimerOn)
 			{
 				dbg("KILL timeout\n");
 				svc.KillTimedOut =1;
 			}
-			else if (ke.ident == TIMER_AUXKILL)
+			else if (ke.ident == TIMER_AUXKILL && svc.AuxKillTimerOn)
 			{
 				dbg("AUXKILL timeout\n");
 				svc.AuxKillTimedOut =1;
