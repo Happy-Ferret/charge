@@ -1,9 +1,9 @@
 /* 
  * Charge System Management Framework
- * Sccsid @(#)main.c	1.4 (Charge) 29/06/14
+ * Sccsid @(#)main.c	1.5 (Charge) 15/08/14
  */
  
-static const char sccsid[] ="@(#)main.c	1.4 (Charge) 29/06/14";
+static const char sccsid[] ="@(#)main.c	1.5 (Charge) 15/08/14";
 
 #include <sys/types.h>
 #include <sys/event.h>
@@ -346,6 +346,7 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 				purgepids(svc->PL, SIGKILL);
 			}
 		}
+		dbg("S_START_PRE: Proceed: %d\n");
 		if (proceed)
 		{
 			svc_start(kq, ke, svc);
@@ -359,6 +360,7 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 		break;
 	}
 	case S_START:
+		/* logic for forking services with PID files */
 		if ((! svc->PIDFileRead) && svc->PIDFile && svc->Type == T_FORKING)
 		{
 			int res =check_pidfile(svc);
@@ -384,6 +386,7 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 		if(svc->StateTimerOn)
 			unset_kqueue_timer(kq, ke, svc->StartTimeout, TIMER_STATELIMIT);
 		svc->StateTimerOn =0;
+		svc->TimedOut =0;
 		if(svc->MainPIDExited && svc->AuxState == S_NONE)
 		{
 			//if we want to restart, set svc->want = s_offline?
@@ -417,6 +420,7 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 			svc_kill_stage_2(kq, ke, svc, MAIN);
 		}
 		break;
+		
 	case S_STOP_SIGKILL:
 		if(svc->AuxState != S_NONE)
 			return 0;
@@ -429,6 +433,7 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 			
 		svc_stop_post(kq, ke, svc);
 		break;
+		
 	case S_STOP_POST:
 		if (svc->TimedOut)
 		{
@@ -442,6 +447,10 @@ svc_transition_if_necessary(int *kq, struct kevent *ke, Service *svc)
 		}
 		if (svc->MainPIDExited)
 		{
+			printf("StopPost is DONE DONE DONE\n");
+			unset_kqueue_timer(kq, ke, svc->StopTimeout, TIMER_STATELIMIT);
+			svc->TimedOut =0;
+			svc->StateTimerOn =0;
 			ENTERSTATE(svc->Want)
 		}
 		

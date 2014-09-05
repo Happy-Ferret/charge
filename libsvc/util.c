@@ -1,6 +1,6 @@
 /* 
  * Charge System Management Framework
- * Sccsid @(#)util.c	1.2 (Charge) 29/06/14
+ * Sccsid @(#)util.c	1.3 (Charge) 15/08/14
  */
 
 #include <sys/stat.h>
@@ -259,6 +259,7 @@ detach_pid_from_kqueue(int *kq, struct kevent *ke, int pid)
 
 void set_kqueue_timer(int *kq, struct kevent *ke, int sec, int ident)
 {
+	dbg("Setting kqueue_timer\n");
 	struct kevent e;
 	static int i;
 	//dbg("set timer for %d seconds", sec);

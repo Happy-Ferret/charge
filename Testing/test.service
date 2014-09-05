@@ -7,22 +7,23 @@
 Description=Testing service
 
 [Service]
-Type=Simple
+Type=Forking
 #SessionLeader=true
 ExecStartPre=echo "Hello, world!"
 #ExecStartPre=./exitcode.sh
 #ExecStartPre=./noexit.sh
-ExecStart=/usr/sbin/cron
-ExecStart=sleep 100
+#ExecStart=/usr/sbin/cron
+ExecStart=sleep 10
 #ExecStart=echo "No No No"
 #ExecStartPost=echo "World, hello!"
-ExecStartPost=sleep 2
+#ExecStartPost=sleep 2
 #ExecStartPost=./noexit.sh
 #ExecStartPost=true
 ExecStopPost=echo "ExecStopPost speaking"
 #ExecStopPost=sleep 15
 PIDFile=/var/run/cron.pid
-Restart=Always
+#Restart=Always
+Restart=No
 RestartSec=3
 
 [Install]
